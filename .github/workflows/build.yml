@@ -29,12 +29,14 @@ jobs:
       - name: Install Windows SDK and WDK
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
+          $ErrorActionPreference = 'Continue'
+          $includeRoot = 'C:\Program Files (x86)\Windows Kits\10\Include'
+          Write-Host "Existing kit includes:"
+          if (Test-Path $includeRoot) { Get-ChildItem $includeRoot -Directory | ForEach-Object { Write-Host "  $($_.Name)" } }
 
           function Test-Wdk {
-            $root = 'C:\Program Files (x86)\Windows Kits\10\Include'
-            if (-not (Test-Path $root)) { return $false }
-            foreach ($dir in Get-ChildItem $root -Directory) {
+            if (-not (Test-Path $includeRoot)) { return $false }
+            foreach ($dir in Get-ChildItem $includeRoot -Directory) {
               if (Test-Path (Join-Path $dir.FullName 'km\wdf.h')) { return $true }
             }
             return $false
@@ -44,15 +46,12 @@ jobs:
             $out = Join-Path $env:TEMP "$name.exe"
             Write-Host "Downloading $name ..."
             Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
-            Write-Host "Installing $name ..."
-            $p = Start-Process -FilePath $out `
-                  -ArgumentList '/quiet','/norestart','/features','+' `
-                  -Wait -PassThru
+            Write-Host "Running $name ..."
+            $p = Start-Process -FilePath $out -ArgumentList '/quiet','/norestart','/features','+' -Wait -PassThru
             Write-Host "$name exit code: $($p.ExitCode)"
           }
 
-          # Windows SDK 10.0.26100 (needed by the 24H2 WDK).
-          if (-not (Test-Path 'C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0')) {
+          if (-not (Test-Path "$includeRoot\10.0.26100.0")) {
             Install-Kit 'https://go.microsoft.com/fwlink/?linkid=2272610' 'winsdksetup'
           }
 
@@ -60,13 +59,25 @@ jobs:
             Install-Kit 'https://go.microsoft.com/fwlink/?linkid=2272234' 'wdksetup'
           }
 
+          # wdksetup is a bundle: it can return before the child installers
+          # finish, so poll for the headers instead of assuming success.
+          for ($i = 0; $i -lt 20 -and -not (Test-Wdk); $i++) {
+            Start-Sleep -Seconds 15
+            Write-Host "Waiting for WDK headers... ($i)"
+          }
+
           if (-not (Test-Wdk)) {
+            Write-Host '--- diagnostics ---'
+            Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10' -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Host "  $($_.Name)" }
+            Get-ChildItem $env:TEMP -Filter '*.log' -ErrorAction SilentlyContinue |
+              Select-Object -First 20 | ForEach-Object { Write-Host "  log: $($_.FullName)" }
+            Get-ChildItem 'C:\ProgramData\Microsoft\VisualStudio\Packages' -ErrorAction SilentlyContinue |
+              Select-Object -First 10 | ForEach-Object { Write-Host "  vs pkg: $($_.Name)" }
             Write-Host '::error::WDK headers (km\wdf.h) not found after installation'
             exit 1
           }
           Write-Host 'WDK is installed.'
-          Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Include' -Directory |
-            ForEach-Object { Write-Host "  SDK/WDK: $($_.Name)" }
 
       # WDK's MSBuild integration lives in a VSIX; install it if the kit did
       # not register it automatically.
