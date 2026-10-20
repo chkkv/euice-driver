@@ -72,5 +72,8 @@
   <ItemGroup>
     <ClInclude Include="src\SiUsbXp.h" />
   </ItemGroup>
+  <ItemGroup>
+    <Inf Include="inf\SiUsbXpArm64.inf" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
