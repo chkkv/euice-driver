@@ -79,7 +79,7 @@ jobs:
                      Where-Object { $_.FullName -match '\\x86\\' } |
                      Select-Object -First 1 -ExpandProperty FullName
           if (-not $inf2cat) { throw 'inf2cat.exe not found' }
-          & $inf2cat /driver:$dir /os:10_ARM64,10_GE_ARM64
+          & $inf2cat /driver:$dir /os:10_ARM64
           if ($LASTEXITCODE -ne 0) { throw "inf2cat failed with $LASTEXITCODE" }
 
       # TEST signing only. Production use requires an EV certificate and
