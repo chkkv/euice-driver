@@ -89,7 +89,7 @@ DriverEntry(
                              &config,
                              WDF_NO_HANDLE);
 
-    SiRecordGlobal(0x01, status);
+    SiRecordGlobal(0x0D, status);   /* 0x0D = DriverEntry */
     return status;
 }
 

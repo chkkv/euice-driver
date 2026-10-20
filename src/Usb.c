@@ -227,19 +227,22 @@ SiUsbInitialize(
     SiRecordInit(dev, 0, STATUS_SUCCESS);
 
     if (dev->UsbDevice == NULL) {
-        WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-        attributes.ParentObject = Device;
-
+        /*
+         * ParentObject must be NULL for the framework USB device object
+         * (wdflib returns STATUS_WDF_PARENT_ASSIGNMENT_NOT_ALLOWED otherwise).
+         */
         WDF_USB_DEVICE_CREATE_CONFIG_INIT(&config, USBD_CLIENT_CONTRACT_VERSION_602);
 
         status = WdfUsbTargetDeviceCreateWithParameters(Device,
                                                         &config,
-                                                        &attributes,
+                                                        WDF_NO_OBJECT_ATTRIBUTES,
                                                         &dev->UsbDevice);
         if (!NT_SUCCESS(status)) {
             DbgPrint("SiUsbXp: WdfUsbTargetDeviceCreateWithParameters 0x%08X\n", status);
             /* Older KMDF entry point as a fallback. */
-            status = WdfUsbTargetDeviceCreate(Device, &attributes, &dev->UsbDevice);
+            status = WdfUsbTargetDeviceCreate(Device,
+                                              WDF_NO_OBJECT_ATTRIBUTES,
+                                              &dev->UsbDevice);
             if (!NT_SUCCESS(status)) {
                 SiRecordInit(dev, 1, status);
                 return status;
@@ -331,8 +334,9 @@ SiUsbControlTransfer(
 
     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memory, (Length != 0) ? Buffer : NULL, Length);
 
+    /* Requests are parented to the device, not the USB target object. */
     WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
-    attributes.ParentObject = Dev->UsbDevice;
+    attributes.ParentObject = Dev->Device;
 
     status = WdfRequestCreate(&attributes, NULL, &request);
     if (!NT_SUCCESS(status)) {
