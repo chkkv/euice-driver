@@ -141,10 +141,12 @@ SiEvtDeviceAdd(
     dev = SiGetDeviceContext(device);
     dev->Device = device;
     dev->OpenCount = 0;
+    SiRecordInit(dev, 0x10, STATUS_SUCCESS);   /* AddDevice reached */
     KeInitializeSpinLock(&dev->RxLock);
 
     status = SiQueueInitialize(device);
     if (!NT_SUCCESS(status)) {
+        SiRecordInit(dev, 0x11, status);
         return status;
     }
 
@@ -153,6 +155,7 @@ SiEvtDeviceAdd(
                                             &SI_GUID_DEVINTERFACE,
                                             NULL);
     if (!NT_SUCCESS(status)) {
+        SiRecordInit(dev, 0x12, status);
         return status;
     }
 

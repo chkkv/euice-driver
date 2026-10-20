@@ -8,6 +8,10 @@
 ```powershell
 $d = Get-PnpDevice -PresentOnly | Where-Object InstanceId -like '*VID_04F3&PID_1006*'
 $d | Format-List InstanceId, Status, Problem, ProblemDescription
+# 主要位置（驱动服务参数键，总是可写）
+Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\SIUSBXP\Parameters' |
+    Select-Object SiInitStage, SiInitStatus
+# 备用位置（设备硬件键）
 Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Enum\$($d.InstanceId)" |
     Select-Object SiInitStage, SiInitStatus
 ```
@@ -18,6 +22,9 @@ Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Enum\$($d.InstanceId)" |
 | SiInitStage | 含义 | 常见原因 |
 |---|---|---|
 | `0` | 初始化成功 | 问题在后续 IO（打开设备 / 端点读写） |
+| `0x10` | `EvtDeviceAdd` 已执行 | 若只有这一段，说明卡在 AddDevice 之后 |
+| `0x11` | 创建队列失败 | |
+| `0x12` | 注册设备接口失败 | |
 | `1` | 创建 USB 目标对象失败 | KMDF/USB 栈异常，`SiInitStatus` 为 NTSTATUS |
 | `2` | 选择配置或查找批量端点失败 | 设备没有 2 个批量端点，或固件未就绪 |
 | `4` | 读取描述符/字符串失败 | 设备描述符异常 |

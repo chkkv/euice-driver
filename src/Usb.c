@@ -17,7 +17,7 @@
  * The values land in the device's hardware key, e.g.
  *   HKLM\SYSTEM\CurrentControlSet\Enum\USB\VID_04F3&PID_1006\<inst>
  */
-static VOID
+VOID
 SiRecordInit(
     _In_ PSI_DEVICE_CONTEXT Dev,
     _In_ ULONG Stage,
@@ -29,6 +29,22 @@ SiRecordInit(
     Dev->InitStage = Stage;
     Dev->InitStatus = Status;
 
+    /*
+     * The service Parameters key is always writable by the driver and is the
+     * most reliable place to leave diagnostics:
+     *   HKLM\SYSTEM\CurrentControlSet\Services\SIUSBXP\Parameters
+     */
+    if (NT_SUCCESS(WdfDriverOpenParametersRegistryKey(WdfGetDriver(),
+                                                      KEY_SET_VALUE,
+                                                      WDF_NO_OBJECT_ATTRIBUTES,
+                                                      &key))) {
+        (VOID) WdfRegistryAssignULong(key, L"SiInitStage", Stage);
+        (VOID) WdfRegistryAssignULong(key, L"SiInitStatus", (ULONG)Status);
+        WdfRegistryClose(key);
+    }
+
+    /* Also mirror into the device's hardware key when possible. */
+    key = NULL;
     if (NT_SUCCESS(WdfDeviceOpenRegistryKey(Dev->Device,
                                             PLUGPLAY_REGKEY_DEVICE,
                                             KEY_SET_VALUE,

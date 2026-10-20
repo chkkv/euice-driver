@@ -108,6 +108,16 @@ jobs:
         run: |
           $dir = '${{ steps.out.outputs.dir }}'
           Copy-Item 'inf\SiUsbXpArm64.inf' $dir -Force
+
+          # Stamp a fresh DriverVer: otherwise every release carries the same
+          # date/version and Windows keeps the previously installed package.
+          $stampinf = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter stampinf.exe |
+                      Where-Object { $_.FullName -match '\\x86\\' } |
+                      Select-Object -First 1 -ExpandProperty FullName
+          if (-not $stampinf) { throw 'stampinf.exe not found' }
+          & $stampinf -f "$dir\SiUsbXpArm64.inf" -d '*' -v "3.3.0.${{ github.run_number }}"
+          if ($LASTEXITCODE -ne 0) { throw "stampinf failed with $LASTEXITCODE" }
+
           $inf2cat = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter inf2cat.exe |
                      Where-Object { $_.FullName -match '\\x86\\' } |
                      Select-Object -First 1 -ExpandProperty FullName
