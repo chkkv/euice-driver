@@ -17,7 +17,7 @@ env:
 jobs:
   driver:
     name: Build ARM64 driver
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 45
 
     steps:
@@ -26,116 +26,25 @@ jobs:
 
       # The hosted image ships Visual Studio 2022 and a Windows 10 SDK but no
       # WDK, so install the matching SDK + WDK (24H2 / 10.0.26100) first.
-      - name: Install Windows SDK and WDK
-        timeout-minutes: 25
+      # windows-2022 ships the WDK (10.1.26100.4202) and the WDK VS
+      # extension, so no installation is required. Just show the layout so a
+      # regression in the image is easy to spot.
+      - name: Show WDK layout
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Continue'
-          $ProgressPreference = 'SilentlyContinue'
-          $includeRoot = 'C:\Program Files (x86)\Windows Kits\10\Include'
-
-          function Log([string]$msg) { Write-Host ("[{0:HH:mm:ss}] {1}" -f (Get-Date), $msg) }
-
-          Log 'Existing kit includes:'
-          if (Test-Path $includeRoot) {
-            Get-ChildItem $includeRoot -Directory | ForEach-Object { Log "  $($_.Name)" }
-          }
-
-          function Test-Wdk {
-            if (-not (Test-Path $includeRoot)) { return $false }
-            foreach ($dir in Get-ChildItem $includeRoot -Directory) {
-              if (Test-Path (Join-Path $dir.FullName 'km\wdf.h')) { return $true }
-            }
-            return $false
-          }
-
-          function Install-Kit([string]$url, [string]$name) {
-            $out = Join-Path $env:TEMP "$name.exe"
-            Log "Downloading $name from $url"
-            # curl prints a live progress bar (stderr) into the Actions log.
-            curl.exe -L --fail --retry 3 --retry-delay 5 --progress-bar -o $out $url
-            if ($LASTEXITCODE -ne 0) { throw "download of $name failed with $LASTEXITCODE" }
-            $mb = (Get-Item $out).Length / 1MB
-            Log ("Downloaded $name ({0:N1} MB)" -f $mb)
-
-            Log "Running $name /quiet /norestart /features +"
-            $sw = [Diagnostics.Stopwatch]::StartNew()
-            $logFile = Join-Path $env:TEMP "$name-install.log"
-            $p = Start-Process -FilePath $out `
-                  -ArgumentList '/quiet','/norestart','/features','+',"/log `"$logFile`"" `
-                  -Wait -PassThru
-            $sw.Stop()
-            Log ("$name finished, exit code {0}, elapsed {1:N0}s" -f $p.ExitCode, $sw.Elapsed.TotalSeconds)
-          }
-
-          if (-not (Test-Path "$includeRoot\10.0.26100.0")) {
-            Install-Kit 'https://go.microsoft.com/fwlink/?linkid=2272610' 'winsdksetup'
-          } else {
-            Log 'Windows SDK 10.0.26100 already present.'
-          }
-
-          if (-not (Test-Wdk)) {
-            Install-Kit 'https://go.microsoft.com/fwlink/?linkid=2272234' 'wdksetup'
-          } else {
-            Log 'WDK headers already present.'
-          }
-
-          # wdksetup is a bundle: it can return before the child installers
-          # finish, so poll for the headers instead of assuming success.
-          $deadline = (Get-Date).AddMinutes(5)
-          $i = 0
-          while (-not (Test-Wdk) -and (Get-Date) -lt $deadline) {
-            $i++
-            Start-Sleep -Seconds 15
-            Log "Waiting for WDK headers (poll $i, $([int]($deadline - [DateTime]::Now).TotalMinutes) min left)..."
-          }
-
-          if (-not (Test-Wdk)) {
-            Log 'WDK bundle did not register headers; trying Chocolatey package.'
-            choco install windowsdriverkit10 -y --no-progress
-            Start-Sleep -Seconds 10
-          }
-
-          if (-not (Test-Wdk)) {
-            Log '--- diagnostics ---'
-            Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10' -ErrorAction SilentlyContinue |
-              ForEach-Object { Log "  $($_.Name)" }
-            Get-ChildItem $env:TEMP -Filter '*-install.log' -ErrorAction SilentlyContinue |
-              ForEach-Object {
-                Log "  --- $($_.FullName) (tail) ---"
-                Get-Content $_.FullName -Tail 40 | ForEach-Object { Log "    $_" }
-              }
-            Write-Host '::error::WDK headers (km\wdf.h) not found after installation'
-            exit 1
-          }
-          Log 'WDK is installed.'
-
-      # WDK's MSBuild integration lives in a VSIX; install it if the kit did
-      # not register it automatically.
-      - name: Install WDK Visual Studio extension
-        shell: pwsh
-        run: |
-          $vsix = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Vsix' -Recurse -Filter '*.vsix' -ErrorAction SilentlyContinue |
-                  Select-Object -First 1
-          if (-not $vsix) {
-            Write-Host 'No WDK VSIX found; assuming the toolset is already registered.'
-            exit 0
-          }
-          $installers = @(
-            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\VSIXInstaller.exe',
-            'C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\VSIXInstaller.exe',
-            'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\VSIXInstaller.exe'
+          $roots = @(
+            'C:\Program Files (x86)\Windows Kits\10\Include',
+            'C:\Program Files (x86)\Windows Kits\10\Lib',
+            'C:\Program Files (x86)\Windows Kits\10\bin'
           )
-          $installer = $installers | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $installer) {
-            Write-Host '::warning::VSIXInstaller.exe not found; skipping.'
-            exit 0
+          foreach ($r in $roots) {
+            Write-Host "== $r"
+            if (Test-Path $r) { Get-ChildItem $r -Directory | ForEach-Object { Write-Host "   $($_.Name)" } }
           }
-          Write-Host "Installing $($vsix.FullName)"
-          Start-Process -FilePath $installer `
-            -ArgumentList '/quiet', '/admin', $vsix.FullName -Wait -PassThru | ForEach-Object {
-              Write-Host "VSIX installer exit code: $($_.ExitCode)"
-            }
+          $wdf = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10' -Recurse -Filter wdf.h -ErrorAction SilentlyContinue |
+                 Select-Object -First 3
+          if ($wdf) { $wdf | ForEach-Object { Write-Host "wdf.h: $($_.FullName)" } }
+          else { Write-Host '::warning::wdf.h not found under Windows Kits' }
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
