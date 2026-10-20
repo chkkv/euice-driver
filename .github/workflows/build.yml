@@ -56,6 +56,7 @@ jobs:
           msbuild SiUsbXpArm64.vcxproj `
             /p:Configuration=$env:CONFIGURATION `
             /p:Platform=$env:PLATFORM `
+            /p:SignMode=Off `
             /v:minimal /m
           $code = $LASTEXITCODE
           if ($code -ne 0) { throw "msbuild failed with exit code $code" }
@@ -69,6 +70,38 @@ jobs:
           $dir = $sys.DirectoryName
           Write-Host "Output: $dir"
           "dir=$dir" >> $env:GITHUB_OUTPUT
+
+      # TEST signing only. Production use requires an EV certificate and
+      # Microsoft attestation signing; see README.md.
+      - name: Create and export test certificate
+        id: cert
+        shell: pwsh
+        run: |
+          $dir = '${{ steps.out.outputs.dir }}'
+          $cert = New-SelfSignedCertificate `
+              -Type CodeSigningCert `
+              -Subject 'CN=SiUsbXpArm64 Test' `
+              -KeySpec Signature -KeyUsage DigitalSignature -KeyLength 2048 `
+              -HashAlgorithm SHA256 `
+              -CertStoreLocation Cert:\CurrentUser\My `
+              -NotAfter (Get-Date).AddYears(3)
+          Export-Certificate -Cert $cert -FilePath (Join-Path $dir 'SiUsbXpArm64Test.cer') | Out-Null
+          Write-Host "Certificate thumbprint: $($cert.Thumbprint)"
+          "thumb=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
+
+      # The binary must be signed BEFORE the catalog is generated, otherwise the
+      # catalog hashes no longer match the signed file (this caused
+      # "publisher trust ... was not established" on install).
+      - name: Sign driver binary
+        shell: pwsh
+        run: |
+          $dir = '${{ steps.out.outputs.dir }}'
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe |
+                      Where-Object { $_.FullName -match '\\x64\\' } |
+                      Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw 'signtool.exe not found' }
+          & $signtool sign /v /fd SHA256 /s My /sha1 ${{ steps.cert.outputs.thumb }} "$dir\SiUsbXpArm64.sys"
+          if ($LASTEXITCODE -ne 0) { throw 'sys signing failed' }
 
       - name: Generate catalog (inf2cat)
         shell: pwsh
@@ -85,32 +118,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "inf2cat failed with $LASTEXITCODE" }
           if (-not (Test-Path "$dir\SiUsbXpArm64.cat")) { throw 'catalog not generated' }
 
-      # TEST signing only. Production use requires an EV certificate and
-      # Microsoft attestation signing; see README.md.
-      - name: Test-sign driver package
+      - name: Sign catalog
         shell: pwsh
         run: |
           $dir = '${{ steps.out.outputs.dir }}'
-          $cert = New-SelfSignedCertificate `
-              -Type CodeSigningCert `
-              -Subject 'CN=SiUsbXpArm64 Test' `
-              -KeySpec Signature -KeyUsage DigitalSignature -KeyLength 2048 `
-              -HashAlgorithm SHA256 `
-              -CertStoreLocation Cert:\CurrentUser\My `
-              -NotAfter (Get-Date).AddYears(3)
-          Export-Certificate -Cert $cert -FilePath (Join-Path $dir 'SiUsbXpArm64Test.cer') | Out-Null
-
           $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe |
                       Where-Object { $_.FullName -match '\\x64\\' } |
                       Select-Object -First 1 -ExpandProperty FullName
-          if (-not $signtool) { throw 'signtool.exe not found' }
+          & $signtool sign /v /fd SHA256 /s My /sha1 ${{ steps.cert.outputs.thumb }} "$dir\SiUsbXpArm64.cat"
+          if ($LASTEXITCODE -ne 0) { throw 'cat signing failed' }
 
-          & $signtool sign /v /fd SHA256 /s My /n 'SiUsbXpArm64 Test' "$dir\SiUsbXpArm64.sys"
-          if ($LASTEXITCODE -ne 0) { throw 'sys signing failed' }
-          if (Test-Path "$dir\SiUsbXpArm64.cat") {
-            & $signtool sign /v /fd SHA256 /s My /n 'SiUsbXpArm64 Test' "$dir\SiUsbXpArm64.cat"
-            if ($LASTEXITCODE -ne 0) { throw 'cat signing failed' }
-          }
+      - name: Verify signatures
+        shell: pwsh
+        run: |
+          $dir = '${{ steps.out.outputs.dir }}'
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe |
+                      Where-Object { $_.FullName -match '\\x64\\' } |
+                      Select-Object -First 1 -ExpandProperty FullName
+          & $signtool verify /pa /v "$dir\SiUsbXpArm64.sys"
+          if ($LASTEXITCODE -ne 0) { throw 'sys signature verification failed' }
+          & $signtool verify /pa /v "$dir\SiUsbXpArm64.cat"
+          if ($LASTEXITCODE -ne 0) { throw 'cat signature verification failed' }
 
       - name: Assemble package
         shell: pwsh
@@ -134,8 +162,10 @@ jobs:
             '',
             'Install (ARM64 Windows 10/11, elevated)',
             '  1. bcdedit /set testsigning on    (reboot)',
-            '  2. Import SiUsbXpArm64Test.cer into "Trusted Root Certification Authorities"',
-            '     and "Trusted Publishers"',
+            '  2. Import SiUsbXpArm64Test.cer into LOCAL MACHINE stores (admin):',
+            '       Import-Certificate -FilePath .\SiUsbXpArm64Test.cer -CertStoreLocation Cert:\LocalMachine\Root',
+            '       Import-Certificate -FilePath .\SiUsbXpArm64Test.cer -CertStoreLocation Cert:\LocalMachine\TrustedPublisher',
+            '     (both stores are required; CurrentUser stores are ignored by driver install)',
             '  3. pnputil /add-driver SiUsbXpArm64.inf /install',
             '',
             'This package is TEST-SIGNED and not suitable for production distribution.'

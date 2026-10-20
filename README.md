@@ -90,8 +90,18 @@ bcdedit /set testsigning on      # 测试签名；生产环境需 EV/微软认�
 pnputil /add-driver .\SiUsbXpArm64.inf /install
 ```
 
-或使用 `build.ps1 -Sign` 生成的测试证书：先把 `SiUsbXpArm64Test.cer` 导入
-“受信任的根证书颁发机构”，再执行 `pnputil`。
+证书必须导入**本地计算机**（LocalMachine）两个存储区，用户级存储区对驱动安装无效：
+
+```powershell
+# 管理员 PowerShell
+Import-Certificate -FilePath .\SiUsbXpArm64Test.cer -CertStoreLocation Cert:\LocalMachine\Root
+Import-Certificate -FilePath .\SiUsbXpArm64Test.cer -CertStoreLocation Cert:\LocalMachine\TrustedPublisher
+pnputil /add-driver .\SiUsbXpArm64.inf /install
+```
+
+若报 “没有建立对 Authenticode(TM) 签名的目录的发布者信任”，按顺序检查：
+证书是否在 `LocalMachine\TrustedPublisher`（不只是 Root）→ 是否已 `bcdedit /set testsigning on` 并重启
+→ `Get-AuthenticodeSignature .\SiUsbXpArm64.cat` 的 `Status` 是否为 `Valid`。
 
 安装后设备管理器中应出现 **ELAN USB UICE**（USB 控制器类别），无黄色感叹号。
 
