@@ -14,6 +14,40 @@ const GUID SI_GUID_DEVINTERFACE_ALT =
 
 DRIVER_INITIALIZE DriverEntry;
 
+/*
+ * Last-resort diagnostics: plain registry writes straight from the kernel, so
+ * they work even if the KMDF helpers fail. Values land in
+ *   HKLM\SOFTWARE\SiUsbXpArm64
+ * Stage 0x01 means DriverEntry ran.
+ */
+VOID
+SiRecordGlobal(
+    _In_ ULONG Stage,
+    _In_ NTSTATUS Status
+    )
+{
+    UNICODE_STRING path;
+    UNICODE_STRING stageName;
+    UNICODE_STRING statusName;
+    OBJECT_ATTRIBUTES oa;
+    HANDLE key = NULL;
+    ULONG disposition = 0;
+
+    RtlInitUnicodeString(&path, L"\\Registry\\Machine\\Software\\SiUsbXpArm64");
+    RtlInitUnicodeString(&stageName, L"Stage");
+    RtlInitUnicodeString(&statusName, L"Status");
+    InitializeObjectAttributes(&oa, &path,
+                               OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+                               NULL, NULL);
+
+    if (NT_SUCCESS(ZwCreateKey(&key, KEY_SET_VALUE, &oa, 0, NULL,
+                               REG_OPTION_NON_VOLATILE, &disposition))) {
+        (VOID) ZwSetValueKey(key, &stageName, 0, REG_DWORD, &Stage, sizeof(Stage));
+        (VOID) ZwSetValueKey(key, &statusName, 0, REG_DWORD, &Status, sizeof(Status));
+        ZwClose(key);
+    }
+}
+
 EVT_WDF_DRIVER_DEVICE_ADD            SiEvtDeviceAdd;
 EVT_WDF_DEVICE_FILE_CREATE           SiEvtFileCreate;
 EVT_WDF_FILE_CLEANUP                 SiEvtFileCleanup;
@@ -45,6 +79,8 @@ DriverEntry(
                              WDF_NO_OBJECT_ATTRIBUTES,
                              &config,
                              WDF_NO_HANDLE);
+
+    SiRecordGlobal(0x01, status);
     return status;
 }
 

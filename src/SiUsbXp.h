@@ -135,6 +135,7 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(SI_FILE_CONTEXT, SiGetFileContext)
 
 /* Usb.c */
 VOID SiRecordInit(_In_ PSI_DEVICE_CONTEXT Dev, _In_ ULONG Stage, _In_ NTSTATUS Status);
+VOID SiRecordGlobal(_In_ ULONG Stage, _In_ NTSTATUS Status);
 NTSTATUS SiUsbInitialize(_In_ WDFDEVICE Device);
 NTSTATUS SiUsbOpenHandshake(_In_ PSI_DEVICE_CONTEXT Dev);
 NTSTATUS SiUsbControlTransfer(

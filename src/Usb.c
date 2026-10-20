@@ -54,6 +54,7 @@ SiRecordInit(
         (VOID) WdfRegistryAssignULong(key, L"SiInitStatus", (ULONG)Status);
         WdfRegistryClose(key);
     }
+    SiRecordGlobal(Stage, Status);
     DbgPrint("SiUsbXp: init stage %lu status 0x%08X\n", Stage, Status);
 }
 
