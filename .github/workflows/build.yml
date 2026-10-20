@@ -70,6 +70,21 @@ jobs:
           Write-Host "Output: $dir"
           "dir=$dir" >> $env:GITHUB_OUTPUT
 
+      - name: Generate catalog (inf2cat)
+        shell: pwsh
+        run: |
+          $dir = '${{ steps.out.outputs.dir }}'
+          Copy-Item 'inf\SiUsbXpArm64.inf' $dir -Force
+          $inf2cat = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter inf2cat.exe |
+                     Where-Object { $_.FullName -match '\\x86\\' } |
+                     Select-Object -First 1 -ExpandProperty FullName
+          if (-not $inf2cat) { throw 'inf2cat.exe not found' }
+          Write-Host "inf2cat: $inf2cat"
+          # Valid ARM64 identifiers per Inf2Cat docs (there is no plain "10_ARM64").
+          & $inf2cat /driver:$dir /os:10_VB_ARM64,10_GE_ARM64 /verbose
+          if ($LASTEXITCODE -ne 0) { throw "inf2cat failed with $LASTEXITCODE" }
+          if (-not (Test-Path "$dir\SiUsbXpArm64.cat")) { throw 'catalog not generated' }
+
       # TEST signing only. Production use requires an EV certificate and
       # Microsoft attestation signing; see README.md.
       - name: Test-sign driver package
