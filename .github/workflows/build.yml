@@ -17,7 +17,7 @@ env:
 jobs:
   driver:
     name: Build ARM64 driver
-    runs-on: windows-2022
+    runs-on: windows-2025
     timeout-minutes: 45
 
     steps:
@@ -60,7 +60,10 @@ jobs:
 
             Log "Running $name /quiet /norestart /features +"
             $sw = [Diagnostics.Stopwatch]::StartNew()
-            $p = Start-Process -FilePath $out -ArgumentList '/quiet','/norestart','/features','+' -Wait -PassThru
+            $logFile = Join-Path $env:TEMP "$name-install.log"
+            $p = Start-Process -FilePath $out `
+                  -ArgumentList '/quiet','/norestart','/features','+',"/log `"$logFile`"" `
+                  -Wait -PassThru
             $sw.Stop()
             Log ("$name finished, exit code {0}, elapsed {1:N0}s" -f $p.ExitCode, $sw.Elapsed.TotalSeconds)
           }
@@ -79,7 +82,7 @@ jobs:
 
           # wdksetup is a bundle: it can return before the child installers
           # finish, so poll for the headers instead of assuming success.
-          $deadline = (Get-Date).AddMinutes(12)
+          $deadline = (Get-Date).AddMinutes(5)
           $i = 0
           while (-not (Test-Wdk) -and (Get-Date) -lt $deadline) {
             $i++
@@ -88,11 +91,20 @@ jobs:
           }
 
           if (-not (Test-Wdk)) {
+            Log 'WDK bundle did not register headers; trying Chocolatey package.'
+            choco install windowsdriverkit10 -y --no-progress
+            Start-Sleep -Seconds 10
+          }
+
+          if (-not (Test-Wdk)) {
             Log '--- diagnostics ---'
             Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10' -ErrorAction SilentlyContinue |
               ForEach-Object { Log "  $($_.Name)" }
-            Get-ChildItem $env:TEMP -Filter '*.log' -ErrorAction SilentlyContinue |
-              Select-Object -First 20 | ForEach-Object { Log "  log: $($_.FullName)" }
+            Get-ChildItem $env:TEMP -Filter '*-install.log' -ErrorAction SilentlyContinue |
+              ForEach-Object {
+                Log "  --- $($_.FullName) (tail) ---"
+                Get-Content $_.FullName -Tail 40 | ForEach-Object { Log "    $_" }
+              }
             Write-Host '::error::WDK headers (km\wdf.h) not found after installation'
             exit 1
           }
