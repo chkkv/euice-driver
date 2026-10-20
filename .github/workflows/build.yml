@@ -1,0 +1,225 @@
+name: build
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CONFIGURATION: Release
+  PLATFORM: ARM64
+
+jobs:
+  driver:
+    name: Build ARM64 driver
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The hosted image ships Visual Studio 2022 and a Windows 10 SDK but no
+      # WDK, so install the matching SDK + WDK (24H2 / 10.0.26100) first.
+      - name: Install Windows SDK and WDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Test-Wdk {
+            $root = 'C:\Program Files (x86)\Windows Kits\10\Include'
+            if (-not (Test-Path $root)) { return $false }
+            foreach ($dir in Get-ChildItem $root -Directory) {
+              if (Test-Path (Join-Path $dir.FullName 'km\wdf.h')) { return $true }
+            }
+            return $false
+          }
+
+          function Install-Kit([string]$url, [string]$name) {
+            $out = Join-Path $env:TEMP "$name.exe"
+            Write-Host "Downloading $name ..."
+            Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing
+            Write-Host "Installing $name ..."
+            $p = Start-Process -FilePath $out `
+                  -ArgumentList '/quiet','/norestart','/features','+' `
+                  -Wait -PassThru
+            Write-Host "$name exit code: $($p.ExitCode)"
+          }
+
+          # Windows SDK 10.0.26100 (needed by the 24H2 WDK).
+          if (-not (Test-Path 'C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0')) {
+            Install-Kit 'https://go.microsoft.com/fwlink/?linkid=2272610' 'winsdksetup'
+          }
+
+          if (-not (Test-Wdk)) {
+            Install-Kit 'https://go.microsoft.com/fwlink/?linkid=2272234' 'wdksetup'
+          }
+
+          if (-not (Test-Wdk)) {
+            Write-Host '::error::WDK headers (km\wdf.h) not found after installation'
+            exit 1
+          }
+          Write-Host 'WDK is installed.'
+          Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Include' -Directory |
+            ForEach-Object { Write-Host "  SDK/WDK: $($_.Name)" }
+
+      # WDK's MSBuild integration lives in a VSIX; install it if the kit did
+      # not register it automatically.
+      - name: Install WDK Visual Studio extension
+        shell: pwsh
+        run: |
+          $vsix = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Vsix' -Recurse -Filter '*.vsix' -ErrorAction SilentlyContinue |
+                  Select-Object -First 1
+          if (-not $vsix) {
+            Write-Host 'No WDK VSIX found; assuming the toolset is already registered.'
+            exit 0
+          }
+          $installers = @(
+            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\VSIXInstaller.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Professional\Common7\IDE\VSIXInstaller.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\VSIXInstaller.exe'
+          )
+          $installer = $installers | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $installer) {
+            Write-Host '::warning::VSIXInstaller.exe not found; skipping.'
+            exit 0
+          }
+          Write-Host "Installing $($vsix.FullName)"
+          Start-Process -FilePath $installer `
+            -ArgumentList '/quiet', '/admin', $vsix.FullName -Wait -PassThru | ForEach-Object {
+              Write-Host "VSIX installer exit code: $($_.ExitCode)"
+            }
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build driver (ARM64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Push-Location build
+          msbuild SiUsbXpArm64.vcxproj `
+            /p:Configuration=$env:CONFIGURATION `
+            /p:Platform=$env:PLATFORM `
+            /v:minimal /m
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 0) { throw "msbuild failed with exit code $code" }
+
+      - name: Locate build output
+        id: out
+        shell: pwsh
+        run: |
+          $sys = Get-ChildItem -Recurse -Filter SiUsbXpArm64.sys | Select-Object -First 1
+          if (-not $sys) { throw 'SiUsbXpArm64.sys not produced' }
+          $dir = $sys.DirectoryName
+          Write-Host "Output: $dir"
+          "dir=$dir" >> $env:GITHUB_OUTPUT
+
+      - name: Generate catalog (inf2cat)
+        shell: pwsh
+        run: |
+          $dir = '${{ steps.out.outputs.dir }}'
+          Copy-Item inf\SiUsbXpArm64.inf $dir -Force
+          $inf2cat = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter inf2cat.exe |
+                     Where-Object { $_.FullName -match '\\x86\\' } |
+                     Select-Object -First 1 -ExpandProperty FullName
+          if (-not $inf2cat) { throw 'inf2cat.exe not found' }
+          & $inf2cat /driver:$dir /os:10_ARM64,10_GE_ARM64
+          if ($LASTEXITCODE -ne 0) { throw "inf2cat failed with $LASTEXITCODE" }
+
+      # TEST signing only. Production use requires an EV certificate and
+      # Microsoft attestation signing; see README.md.
+      - name: Test-sign driver package
+        shell: pwsh
+        run: |
+          $dir = '${{ steps.out.outputs.dir }}'
+          $cert = New-SelfSignedCertificate `
+              -Type CodeSigningCert `
+              -Subject 'CN=SiUsbXpArm64 Test' `
+              -KeySpec Signature -KeyUsage DigitalSignature -KeyLength 2048 `
+              -HashAlgorithm SHA256 `
+              -CertStoreLocation Cert:\CurrentUser\My `
+              -NotAfter (Get-Date).AddYears(3)
+          Export-Certificate -Cert $cert -FilePath (Join-Path $dir 'SiUsbXpArm64Test.cer') | Out-Null
+
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe |
+                      Where-Object { $_.FullName -match '\\x64\\' } |
+                      Select-Object -First 1 -ExpandProperty FullName
+          if (-not $signtool) { throw 'signtool.exe not found' }
+
+          & $signtool sign /v /fd SHA256 /s My /n 'SiUsbXpArm64 Test' "$dir\SiUsbXpArm64.sys"
+          if ($LASTEXITCODE -ne 0) { throw 'sys signing failed' }
+          if (Test-Path "$dir\SiUsbXpArm64.cat") {
+            & $signtool sign /v /fd SHA256 /s My /n 'SiUsbXpArm64 Test' "$dir\SiUsbXpArm64.cat"
+            if ($LASTEXITCODE -ne 0) { throw 'cat signing failed' }
+          }
+
+      - name: Assemble package
+        shell: pwsh
+        run: |
+          $dir = '${{ steps.out.outputs.dir }}'
+          $pkg = 'pkg'
+          New-Item -ItemType Directory -Force -Path $pkg | Out-Null
+          Copy-Item "$dir\SiUsbXpArm64.sys", "$dir\SiUsbXpArm64.inf" -Destination $pkg -Force
+          if (Test-Path "$dir\SiUsbXpArm64.cat") { Copy-Item "$dir\SiUsbXpArm64.cat" $pkg }
+          Copy-Item "$dir\SiUsbXpArm64Test.cer" $pkg
+          Copy-Item README.md, docs\ANALYSIS.md -Destination $pkg
+          @'
+ELAN USB UICE (USBXpress 3.3) driver - ARM64 build
+=================================================
+
+Contents
+  SiUsbXpArm64.sys / .inf / .cat   KMDF function driver package
+  SiUsbXpArm64Test.cer             self-signed test certificate (PUBLIC KEY ONLY)
+
+Install (ARM64 Windows 10/11, elevated)
+  1. bcdedit /set testsigning on    (reboot)
+  2. Import SiUsbXpArm64Test.cer into "Trusted Root Certification Authorities"
+     and "Trusted Publishers"
+  3. pnputil /add-driver SiUsbXpArm64.inf /install
+
+This package is TEST-SIGNED and not suitable for production distribution.
+'@ | Set-Content -Path (Join-Path $pkg 'INSTALL.txt') -Encoding UTF8
+          Get-ChildItem $pkg | Format-Table Name, Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SiUsbXpArm64
+          path: pkg/*
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: driver
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: SiUsbXpArm64
+          path: dist
+
+      - name: Create archive
+        run: |
+          cd dist
+          zip -r "../SiUsbXpArm64-${GITHUB_REF_NAME}.zip" .
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SiUsbXpArm64-${{ github.ref_name }}.zip
+          generate_release_notes: true
+          body: |
+            ARM64 build of the USBXpress-compatible ELAN USB UICE driver.
+
+            **Test-signed** — install with `testsigning on` and the included
+            `SiUsbXpArm64Test.cer`, or re-sign with your own certificate.
+            See `docs/ANALYSIS.md` for the reverse-engineering notes and the
+            list of known behavioural differences.

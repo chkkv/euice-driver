@@ -1,0 +1,76 @@
+;;
+;; SiUsbXpArm64.inf
+;;
+;; Install package for the ARM64 reimplementation of the ELAN USB UICE
+;; (USBXpress 3.3) function driver.
+;;
+;; The hardware ID, service name and device description are identical to the
+;; original SiU2P15.inf so the package is a drop-in replacement.
+;;
+
+[Version]
+Signature="$WINDOWS NT$"
+Class=USB
+ClassGuid={36fc9e60-c465-11cf-8056-444553540000}
+Provider=%MFGNAME%
+CatalogFile=SiUsbXpArm64.cat
+DriverVer=01/15/2025,3.3.0.1
+PnpLockdown=1
+
+[DestinationDirs]
+DefaultDestDir=13
+SiUsbXp_CopyFiles=13
+
+[SourceDisksNames]
+1=%INSTDISK%,,,""
+
+[SourceDisksFiles]
+SiUsbXpArm64.sys=1
+
+;;
+;; ARM64 only. The original package declared only NTamd64, so a separate
+;; package is required for ARM64 anyway.
+;;
+[Manufacturer]
+%MFGNAME%=DeviceList,NTARM64
+
+[DeviceList.NTARM64]
+%ELAN_USB_UICE%=SiUsbXp_Install, USB\VID_04F3&PID_1006
+
+[SiUsbXp_Install.NT]
+Include=wdfusb.inf
+Needs=WdfUsbInst.NT
+CopyFiles=SiUsbXp_CopyFiles
+
+[SiUsbXp_Install.NT.Hw]
+AddReg=SiUsbXp_HwAddReg
+
+[SiUsbXp_Install.NT.Services]
+Include=wdfusb.inf
+Needs=WdfUsbInst.NT.Services
+AddService=SIUSBXP,0x00000002,SiUsbXp_Service
+
+[SiUsbXp_Install.NT.Wdf]
+KmdfService=SIUSBXP,SiUsbXp_wdfsect
+
+[SiUsbXp_wdfsect]
+KmdfLibraryVersion=1.27
+
+[SiUsbXp_Service]
+DisplayName=%SERVICE_NAME%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%13%\SiUsbXpArm64.sys
+
+[SiUsbXp_CopyFiles]
+SiUsbXpArm64.sys
+
+[SiUsbXp_HwAddReg]
+HKR,,FriendlyName,,%ELAN_USB_UICE%
+
+[Strings]
+MFGNAME="ELAN Microelectronics Corp."
+INSTDISK="ELAN USB UICE ARM64 Driver"
+ELAN_USB_UICE="ELAN USB UICE"
+SERVICE_NAME="ELAN USBXpress Driver (ARM64)"

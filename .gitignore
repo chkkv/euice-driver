@@ -1,0 +1,21 @@
+# Build output
+artifacts/
+obj/
+pkg/
+dist/
+*.sys
+*.cat
+*.cer
+*.pdb
+*.ilk
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+
+# OS noise
+Thumbs.db
+.DS_Store
