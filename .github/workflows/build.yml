@@ -170,22 +170,23 @@ jobs:
           if (Test-Path "$dir\SiUsbXpArm64.cat") { Copy-Item "$dir\SiUsbXpArm64.cat" $pkg }
           Copy-Item "$dir\SiUsbXpArm64Test.cer" $pkg
           Copy-Item README.md, docs\ANALYSIS.md -Destination $pkg
-          @'
-ELAN USB UICE (USBXpress 3.3) driver - ARM64 build
-=================================================
-
-Contents
-  SiUsbXpArm64.sys / .inf / .cat   KMDF function driver package
-  SiUsbXpArm64Test.cer             self-signed test certificate (PUBLIC KEY ONLY)
-
-Install (ARM64 Windows 10/11, elevated)
-  1. bcdedit /set testsigning on    (reboot)
-  2. Import SiUsbXpArm64Test.cer into "Trusted Root Certification Authorities"
-     and "Trusted Publishers"
-  3. pnputil /add-driver SiUsbXpArm64.inf /install
-
-This package is TEST-SIGNED and not suitable for production distribution.
-'@ | Set-Content -Path (Join-Path $pkg 'INSTALL.txt') -Encoding UTF8
+          $install = @(
+            'ELAN USB UICE (USBXpress 3.3) driver - ARM64 build',
+            '=================================================',
+            '',
+            'Contents',
+            '  SiUsbXpArm64.sys / .inf / .cat   KMDF function driver package',
+            '  SiUsbXpArm64Test.cer             self-signed test certificate (PUBLIC KEY ONLY)',
+            '',
+            'Install (ARM64 Windows 10/11, elevated)',
+            '  1. bcdedit /set testsigning on    (reboot)',
+            '  2. Import SiUsbXpArm64Test.cer into "Trusted Root Certification Authorities"',
+            '     and "Trusted Publishers"',
+            '  3. pnputil /add-driver SiUsbXpArm64.inf /install',
+            '',
+            'This package is TEST-SIGNED and not suitable for production distribution.'
+          )
+          Set-Content -Path (Join-Path $pkg 'INSTALL.txt') -Value $install -Encoding UTF8
           Get-ChildItem $pkg | Format-Table Name, Length
 
       - name: Upload artifact
