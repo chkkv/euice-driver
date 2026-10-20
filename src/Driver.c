@@ -286,25 +286,23 @@ SiEvtFileCreate(
 
     file->Opened = TRUE;
 
+    /*
+     * The original IRP_MJ_CREATE handler ignores handshake failures: after
+     * the vendor requests it unconditionally stores the mode byte, marks the
+     * device open and completes with STATUS_SUCCESS (page+0x13f2a). Failing
+     * here would make SI_Open() return an error and the IDE would claim the
+     * device is missing.
+     */
     status = SiUsbOpenHandshake(dev);
     if (!NT_SUCCESS(status)) {
-        /*
-         * The original only fails the create if the handshake itself fails;
-         * a rejected status read is tolerated (it treats the returned byte as
-         * "mode").
-         */
-        file->Opened = FALSE;
-        InterlockedDecrement(&dev->OpenCount);
-        WdfRequestComplete(Request, status);
-        return;
+        DbgPrint("SiUsbXp: handshake failed 0x%08X (continuing)\n", status);
+        SiRecordInit(dev, 0x20, status);
     }
 
     status = SiRxStart(dev);
     if (!NT_SUCCESS(status)) {
-        file->Opened = FALSE;
-        InterlockedDecrement(&dev->OpenCount);
-        WdfRequestComplete(Request, status);
-        return;
+        DbgPrint("SiUsbXp: reader start failed 0x%08X (continuing)\n", status);
+        SiRecordInit(dev, 0x21, status);
     }
 
     WdfRequestComplete(Request, STATUS_SUCCESS);
