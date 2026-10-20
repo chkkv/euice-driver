@@ -138,6 +138,7 @@ SiEvtDeviceAdd(
     )
 {
     WDF_OBJECT_ATTRIBUTES attributes;
+    WDF_OBJECT_ATTRIBUTES fileAttributes;
     WDF_FILEOBJECT_CONFIG fileConfig;
     WDF_PNPPOWER_EVENT_CALLBACKS pnpPower;
     WDFDEVICE device;
@@ -157,9 +158,17 @@ SiEvtDeviceAdd(
                                SiEvtFileCreate,
                                SiEvtFileClose,
                                SiEvtFileCleanup);
+
+    /*
+     * The create/cleanup/close callbacks store per-handle state, so the file
+     * object MUST have context space. Passing WDF_NO_OBJECT_ATTRIBUTES here
+     * left SiGetFileContext() returning garbage and the first write through it
+     * bugchecked with 0x3B (0xC0000005) when the user opened the device.
+     */
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&fileAttributes, SI_FILE_CONTEXT);
     WdfDeviceInitSetFileObjectConfig(DeviceInit,
                                      &fileConfig,
-                                     WDF_NO_OBJECT_ATTRIBUTES);
+                                     &fileAttributes);
 
     /* The USB target is created in EvtDevicePrepareHardware, once PnP has
      * assigned resources, mirroring the original's StartDevice path. */
