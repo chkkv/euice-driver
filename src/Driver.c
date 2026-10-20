@@ -149,12 +149,6 @@ SiEvtDeviceAdd(
      * All IOCTLs use METHOD_BUFFERED in the original driver; force the same
      * for every request so SystemBuffer semantics match.
      */
-    /*
-     * Force PASSIVE_LEVEL for every callback: the USB synchronous helpers
-     * (control transfer, pipe write) are PASSIVE-only, and the read pump must
-     * not race a dispatch-level callback.
-     */
-    WdfDeviceInitSetExecutionLevel(DeviceInit, WdfExecutionLevelPassive);
     WdfDeviceInitSetIoType(DeviceInit, WdfDeviceIoBuffered);
     WdfDeviceInitSetDeviceType(DeviceInit, FILE_DEVICE_UNKNOWN);
     WdfDeviceInitSetExclusive(DeviceInit, FALSE);
@@ -183,6 +177,11 @@ SiEvtDeviceAdd(
 
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, SI_DEVICE_CONTEXT);
     attributes.EvtCleanupCallback = NULL;
+    /*
+     * Force PASSIVE_LEVEL for the device and its child objects: the USB
+     * synchronous helpers (control transfer, pipe write) are PASSIVE-only.
+     */
+    attributes.ExecutionLevel = WdfExecutionLevelPassive;
 
     status = WdfDeviceCreate(&DeviceInit, &attributes, &device);
     if (!NT_SUCCESS(status)) {
