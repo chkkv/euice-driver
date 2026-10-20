@@ -42,8 +42,17 @@ SiRecordGlobal(
 
     if (NT_SUCCESS(ZwCreateKey(&key, KEY_SET_VALUE, &oa, 0, NULL,
                                REG_OPTION_NON_VOLATILE, &disposition))) {
+        UNICODE_STRING wdfName;
+        ULONG wdfVer = 0;
+
         (VOID) ZwSetValueKey(key, &stageName, 0, REG_DWORD, &Stage, sizeof(Stage));
         (VOID) ZwSetValueKey(key, &statusName, 0, REG_DWORD, &Status, sizeof(Status));
+
+#if defined(WDF_MAJOR_VERSION) && defined(WDF_MINOR_VERSION)
+        wdfVer = ((ULONG)WDF_MAJOR_VERSION << 16) | (ULONG)WDF_MINOR_VERSION;
+#endif
+        RtlInitUnicodeString(&wdfName, L"WdfVer");
+        (VOID) ZwSetValueKey(key, &wdfName, 0, REG_DWORD, &wdfVer, sizeof(wdfVer));
         ZwClose(key);
     }
 }
