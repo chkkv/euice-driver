@@ -6,27 +6,30 @@
 --*/
 #include "SiUsbXp.h"
 
+/* Present in recent WDKs; define defensively for older ones. */
+#ifndef USBD_CLIENT_CONTRACT_VERSION_602
+#define USBD_CLIENT_CONTRACT_VERSION_602 0x602
+#endif
+
 static NTSTATUS
 SiCacheDescriptors(
     _In_ WDFDEVICE Device,
     _In_ PSI_DEVICE_CONTEXT Dev
     )
 {
-    PUSB_DEVICE_DESCRIPTOR descriptor;
+    USB_DEVICE_DESCRIPTOR descriptor;
     USHORT langId = 0x0409;
     USHORT length;
     NTSTATUS status;
 
-    descriptor = WdfUsbTargetDeviceGetDeviceDescriptor(Dev->UsbDevice);
-    if (descriptor == NULL) {
-        return STATUS_UNSUCCESSFUL;
-    }
-    RtlCopyMemory(&Dev->DeviceDescriptor, descriptor, sizeof(USB_DEVICE_DESCRIPTOR));
+    RtlZeroMemory(&descriptor, sizeof(descriptor));
+    WdfUsbTargetDeviceGetDeviceDescriptor(Dev->UsbDevice, &descriptor);
+    RtlCopyMemory(&Dev->DeviceDescriptor, &descriptor, sizeof(USB_DEVICE_DESCRIPTOR));
 
     /* Serial number string: IOCTL 0x22200C returns a 9-byte buffer (8
      * characters plus terminator) exactly like the original's cached copy. */
     RtlZeroMemory(Dev->PartString, sizeof(Dev->PartString));
-    if (descriptor->iSerialNumber != 0) {
+    if (descriptor.iSerialNumber != 0) {
         length = (USHORT)sizeof(Dev->PartString);
         status = WdfUsbTargetDeviceQueryString(Dev->UsbDevice,
                                                NULL,
@@ -34,7 +37,7 @@ SiCacheDescriptors(
                                                (PUSHORT)Dev->PartString,
                                                &length,
                                                langId,
-                                               descriptor->iSerialNumber);
+                                               descriptor.iSerialNumber);
         if (!NT_SUCCESS(status) && status != STATUS_BUFFER_TOO_SMALL) {
             /* Non-fatal: leave the buffer zeroed. */
             RtlZeroMemory(Dev->PartString, sizeof(Dev->PartString));
@@ -45,7 +48,7 @@ SiCacheDescriptors(
      * returns the byte count (including the terminating NUL) in Length. */
     RtlZeroMemory(Dev->ProductString, sizeof(Dev->ProductString));
     Dev->ProductStringLength = 0;
-    if (descriptor->iProduct != 0) {
+    if (descriptor.iProduct != 0) {
         length = (USHORT)sizeof(Dev->ProductString);
         status = WdfUsbTargetDeviceQueryString(Dev->UsbDevice,
                                                NULL,
@@ -53,7 +56,7 @@ SiCacheDescriptors(
                                                (PUSHORT)Dev->ProductString,
                                                &length,
                                                langId,
-                                               descriptor->iProduct);
+                                               descriptor.iProduct);
         if (NT_SUCCESS(status) || status == STATUS_BUFFER_TOO_SMALL) {
             Dev->ProductStringLength = length;
         }
@@ -201,7 +204,7 @@ SiUsbControlTransfer(
     WDF_OBJECT_ATTRIBUTES attributes;
     WDFREQUEST request = WDF_NO_HANDLE;
     NTSTATUS status;
-    ULONG_PTR bytes = 0;
+    ULONG bytes = 0;
 
     if (Transferred != NULL) {
         *Transferred = 0;
@@ -213,14 +216,31 @@ SiUsbControlTransfer(
      * with a fixed TransferFlags direction and only takes the type/recipient
      * bits from the caller's bmRequestType.
      */
-    WDF_USB_CONTROL_SETUP_PACKET_INIT(&setup,
-                                      DeviceToHost ? BmRequestDeviceToHost
-                                                   : BmRequestHostToDevice,
-                                      (WDF_USB_BMREQUEST_RECIPIENT)(RequestType & 0x1F),
-                                      (WDF_USB_BMREQUEST_TYPE)((RequestType >> 5) & 0x03),
-                                      Request,
-                                      Value,
-                                      Index);
+    if ((RequestType & 0x60) == 0x40) {
+        WDF_USB_CONTROL_SETUP_PACKET_INIT_VENDOR(&setup,
+                                                 DeviceToHost ? BmRequestDeviceToHost
+                                                              : BmRequestHostToDevice,
+                                                 (WDF_USB_BMREQUEST_RECIPIENT)(RequestType & 0x1F),
+                                                 Request,
+                                                 Value,
+                                                 Index);
+    } else if ((RequestType & 0x60) == 0x20) {
+        WDF_USB_CONTROL_SETUP_PACKET_INIT_CLASS(&setup,
+                                                DeviceToHost ? BmRequestDeviceToHost
+                                                             : BmRequestHostToDevice,
+                                                (WDF_USB_BMREQUEST_RECIPIENT)(RequestType & 0x1F),
+                                                Request,
+                                                Value,
+                                                Index);
+    } else {
+        WDF_USB_CONTROL_SETUP_PACKET_INIT(&setup,
+                                          DeviceToHost ? BmRequestDeviceToHost
+                                                       : BmRequestHostToDevice,
+                                          (WDF_USB_BMREQUEST_RECIPIENT)(RequestType & 0x1F),
+                                          Request,
+                                          Value,
+                                          Index);
+    }
 
     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(&memory, (Length != 0) ? Buffer : NULL, Length);
 
@@ -243,7 +263,7 @@ SiUsbControlTransfer(
                                                                 &bytes);
     if (NT_SUCCESS(status)) {
         if (Transferred != NULL) {
-            *Transferred = (ULONG)bytes;
+            *Transferred = bytes;
         }
     } else if (status == STATUS_IO_TIMEOUT) {
         /* Keep the same status the USB stack would produce. */

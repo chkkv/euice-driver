@@ -151,10 +151,10 @@ SiRxDrainPending(
 
 static VOID
 SiRxReadComplete(
-    _In_ WDFUSBPIPE                     Pipe,
-    _In_ WDFIOTARGET                    Target,
-    _In_ PWDF_USB_READER_COMPLETION_PARAMS Params,
-    _In_ WDFCONTEXT                     Context
+    _In_ WDFUSBPIPE Pipe,
+    _In_ WDFMEMORY  Buffer,
+    _In_ size_t     NumBytesTransferred,
+    _In_ WDFCONTEXT Context
     )
 {
     PSI_DEVICE_CONTEXT dev = (PSI_DEVICE_CONTEXT)Context;
@@ -162,19 +162,19 @@ SiRxReadComplete(
     size_t length = 0;
 
     UNREFERENCED_PARAMETER(Pipe);
-    UNREFERENCED_PARAMETER(Target);
 
-    if (NT_SUCCESS(Params->IoStatus.Status) && Params->IoStatus.Information > 0) {
-        buffer = WdfMemoryGetBuffer(Params->Buffer, &length);
-        if (buffer != NULL) {
-            ULONG bytes = (ULONG)Params->IoStatus.Information;
-            if (bytes > length) {
-                bytes = (ULONG)length;
-            }
-            SiRxAppend(dev, (const UCHAR*)buffer, bytes);
-        }
-        SiRxDrainPending(dev);
+    if (NumBytesTransferred == 0) {
+        return;
     }
+
+    buffer = WdfMemoryGetBuffer(Buffer, &length);
+    if (buffer != NULL) {
+        if (NumBytesTransferred > length) {
+            NumBytesTransferred = length;
+        }
+        SiRxAppend(dev, (const UCHAR*)buffer, (ULONG)NumBytesTransferred);
+    }
+    SiRxDrainPending(dev);
 }
 
 /* ------------------------------------------------------------------------- */
