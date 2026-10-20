@@ -10,9 +10,10 @@ ARM64 上继续工作**。
 设备接口 GUID、IOCTL 编号与缓冲区语义、控制传输包格式、打开时序、读写队列与
 4 KiB 上限等。逐条证据见 [docs/ANALYSIS.md](docs/ANALYSIS.md)。
 
-> **当前状态**：代码为在本机（Linux）上完成的静态重构，**尚未用 WDK 编译、也未在
-> 真机/ARM64 上验证**。第 9 节的差异项（尤其是 `0x222014` 部件记录的内容）需要
-> 在真机上比对后再定稿。请勿直接用于生产环境。
+> **当前状态**：已在 GitHub Actions（windows-2022 + WDK 10.1.26100）成功编译出
+> **ARM64 驱动** `SiUsbXpArm64.sys`，并自动生成 INF/CAT 与测试签名包；**尚未在真实
+> USB ICE 硬件上验证**。`0x222014` 部件记录等内容仍需真机比对，请勿直接用于
+> 生产环境。
 
 ---
 
@@ -55,6 +56,8 @@ euice-driver/
 - 每次 push / PR：构建 ARM64 驱动，上传 `SiUsbXpArm64` artifact；
 - 打 `v*` 标签：额外生成 Release，附带
   `SiUsbXpArm64-<tag>.zip`（sys/inf/cat/测试证书/文档）。
+
+最新构建产物可在 Actions 的 `SiUsbXpArm64` artifact 或 Releases 页面获取。
 
 工作流在 `windows-2022` 上安装 Windows SDK + WDK 24H2（10.0.26100）后编译。
 
