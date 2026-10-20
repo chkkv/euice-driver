@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$proj = Join-Path $PSScriptRoot "SiUsbXpArm64.vcxproj"
+$proj = Join-Path $root "SiUsbXpArm64.vcxproj"
 $out  = Join-Path $root "artifacts\ARM64\$Configuration"
 
 # Locate msbuild through vswhere.

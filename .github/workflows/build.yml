@@ -53,13 +53,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Push-Location build
           msbuild SiUsbXpArm64.vcxproj `
             /p:Configuration=$env:CONFIGURATION `
             /p:Platform=$env:PLATFORM `
             /v:minimal /m
           $code = $LASTEXITCODE
-          Pop-Location
           if ($code -ne 0) { throw "msbuild failed with exit code $code" }
 
       - name: Locate build output

@@ -28,8 +28,8 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
     <TargetName>SiUsbXpArm64</TargetName>
-    <OutDir>$(ProjectDir)..\artifacts\$(Platform)\$(Configuration)\</OutDir>
-    <IntDir>$(ProjectDir)..\obj\$(Platform)\$(Configuration)\</IntDir>
+    <OutDir>$(ProjectDir)artifacts\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)obj\$(Platform)\$(Configuration)\</IntDir>
     <KMDF_VERSION_MAJOR>1</KMDF_VERSION_MAJOR>
     <KMDF_VERSION_MINOR>27</KMDF_VERSION_MINOR>
   </PropertyGroup>
