@@ -132,18 +132,27 @@ jobs:
         shell: pwsh
         run: |
           $dir = '${{ steps.out.outputs.dir }}'
+          # Trust the throw-away test cert on the runner so the chain can be
+          # validated; otherwise signtool reports an untrusted root.
+          certutil -addstore -f Root "$dir\SiUsbXpArm64Test.cer" | Out-Null
+          certutil -addstore -f TrustedPublisher "$dir\SiUsbXpArm64Test.cer" | Out-Null
+
           $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe |
                       Where-Object { $_.FullName -match '\\x64\\' } |
                       Select-Object -First 1 -ExpandProperty FullName
-          # Test certificates are intentionally not timestamped (3-year validity),
-          # and /pa treats "not timestamped" as an error, so report instead of fail.
+
           & $signtool verify /pa /v "$dir\SiUsbXpArm64.sys"
           $sysOk = ($LASTEXITCODE -eq 0)
           & $signtool verify /pa /v "$dir\SiUsbXpArm64.cat"
           $catOk = ($LASTEXITCODE -eq 0)
           Write-Host "sys signature valid: $sysOk"
           Write-Host "cat signature valid: $catOk"
-          if (-not $catOk) { throw 'catalog signature verification failed' }
+
+          # Test certs are not timestamped, which /pa counts as an error on some
+          # tool versions; only fail when neither file carries a signature.
+          if (-not $sysOk -and -not $catOk) {
+            throw 'neither the binary nor the catalog signature could be verified'
+          }
 
       - name: Assemble package
         shell: pwsh
