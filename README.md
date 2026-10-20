@@ -99,6 +99,9 @@ Import-Certificate -FilePath .\SiUsbXpArm64Test.cer -CertStoreLocation Cert:\Loc
 pnputil /add-driver .\SiUsbXpArm64.inf /install
 ```
 
+注意：**每次 CI 构建都会生成新的自签名证书**，必须使用同一个 zip 里的
+`SiUsbXpArm64Test.cer`；用其他版本的证书会签名不匹配。
+
 若报 “没有建立对 Authenticode(TM) 签名的目录的发布者信任”，按顺序检查：
 证书是否在 `LocalMachine\TrustedPublisher`（不只是 Root）→ 是否已 `bcdedit /set testsigning on` 并重启
 → `Get-AuthenticodeSignature .\SiUsbXpArm64.cat` 的 `Status` 是否为 `Valid`。
