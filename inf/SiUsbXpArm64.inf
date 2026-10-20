@@ -17,6 +17,12 @@ CatalogFile=SiUsbXpArm64.cat
 DriverVer=01/15/2025,3.3.0.1
 PnpLockdown=1
 
+[SourceDisksNames]
+1 = %INSTDISK%,,,
+
+[SourceDisksFiles]
+SiUsbXpArm64.sys = 1
+
 [DestinationDirs]
 DefaultDestDir=13
 SiUsbXp_CopyFiles=13
@@ -66,4 +72,5 @@ HKR,,FriendlyName,,%ELAN_USB_UICE%
 [Strings]
 MFGNAME="ELAN Microelectronics Corp."
 ELAN_USB_UICE="ELAN USB UICE"
+INSTDISK="ELAN USB UICE ARM64 Driver"
 SERVICE_NAME="ELAN USBXpress Driver (ARM64)"
