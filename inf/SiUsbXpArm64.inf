@@ -21,12 +21,6 @@ PnpLockdown=1
 DefaultDestDir=13
 SiUsbXp_CopyFiles=13
 
-[SourceDisksNames]
-1=%INSTDISK%,,,""
-
-[SourceDisksFiles]
-SiUsbXpArm64.sys=1
-
 ;;
 ;; ARM64 only. The original package declared only NTamd64, so a separate
 ;; package is required for ARM64 anyway.
@@ -71,6 +65,5 @@ HKR,,FriendlyName,,%ELAN_USB_UICE%
 
 [Strings]
 MFGNAME="ELAN Microelectronics Corp."
-INSTDISK="ELAN USB UICE ARM64 Driver"
 ELAN_USB_UICE="ELAN USB UICE"
 SERVICE_NAME="ELAN USBXpress Driver (ARM64)"
