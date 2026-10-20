@@ -149,6 +149,12 @@ SiEvtDeviceAdd(
      * All IOCTLs use METHOD_BUFFERED in the original driver; force the same
      * for every request so SystemBuffer semantics match.
      */
+    /*
+     * Force PASSIVE_LEVEL for every callback: the USB synchronous helpers
+     * (control transfer, pipe write) are PASSIVE-only, and the read pump must
+     * not race a dispatch-level callback.
+     */
+    WdfDeviceInitSetExecutionLevel(DeviceInit, WdfExecutionLevelPassive);
     WdfDeviceInitSetIoType(DeviceInit, WdfDeviceIoBuffered);
     WdfDeviceInitSetDeviceType(DeviceInit, FILE_DEVICE_UNKNOWN);
     WdfDeviceInitSetExclusive(DeviceInit, FALSE);
@@ -521,6 +527,11 @@ SiEvtIoDeviceControl(
          */
         ULONG available;
 
+        if (dev->BulkIn == NULL) {
+            status = STATUS_DEVICE_NOT_READY;
+            break;
+        }
+
         status = WdfRequestRetrieveOutputBuffer(Request, 1, &outBuffer, &outLength);
         if (!NT_SUCCESS(status)) {
             break;
@@ -642,6 +653,11 @@ SiEvtIoWrite(
     WDF_REQUEST_SEND_OPTIONS options;
     ULONG bytesWritten = 0;
     NTSTATUS status;
+
+    if (dev->BulkOut == NULL) {
+        WdfRequestComplete(Request, STATUS_DEVICE_NOT_READY);
+        return;
+    }
 
     /* page+0x1489f: writes larger than 0x1000 fail with STATUS_INVALID_BUFFER_SIZE. */
     if (Length > SI_MAX_TRANSFER) {
