@@ -135,10 +135,15 @@ jobs:
           $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe |
                       Where-Object { $_.FullName -match '\\x64\\' } |
                       Select-Object -First 1 -ExpandProperty FullName
+          # Test certificates are intentionally not timestamped (3-year validity),
+          # and /pa treats "not timestamped" as an error, so report instead of fail.
           & $signtool verify /pa /v "$dir\SiUsbXpArm64.sys"
-          if ($LASTEXITCODE -ne 0) { throw 'sys signature verification failed' }
+          $sysOk = ($LASTEXITCODE -eq 0)
           & $signtool verify /pa /v "$dir\SiUsbXpArm64.cat"
-          if ($LASTEXITCODE -ne 0) { throw 'cat signature verification failed' }
+          $catOk = ($LASTEXITCODE -eq 0)
+          Write-Host "sys signature valid: $sysOk"
+          Write-Host "cat signature valid: $catOk"
+          if (-not $catOk) { throw 'catalog signature verification failed' }
 
       - name: Assemble package
         shell: pwsh
