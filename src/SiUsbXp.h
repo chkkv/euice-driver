@@ -123,6 +123,11 @@ typedef struct _SI_DEVICE_CONTEXT {
     /* Mode byte returned by the open handshake (0xFF/0x370B read),
      * stored at ext+0x200 by the original. */
     UCHAR          ModeByte;
+
+    /* Diagnostics: written to the device's hardware key so a Code 10 can be
+     * traced without a kernel debugger. 0 = success. */
+    ULONG          InitStage;
+    NTSTATUS       InitStatus;
 } SI_DEVICE_CONTEXT, *PSI_DEVICE_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(SI_DEVICE_CONTEXT, SiGetDeviceContext)
