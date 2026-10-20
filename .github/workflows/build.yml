@@ -46,6 +46,18 @@ jobs:
           if ($wdf) { $wdf | ForEach-Object { Write-Host "wdf.h: $($_.FullName)" } }
           else { Write-Host '::warning::wdf.h not found under Windows Kits' }
 
+      - name: Dump KMDF status constants (diagnostic)
+        shell: pwsh
+        run: |
+          $h = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\Include' -Recurse -Filter wdfstatus.h -ErrorAction SilentlyContinue |
+               Select-Object -First 1
+          if ($h) {
+            Write-Host "wdfstatus.h: $($h.FullName)"
+            Select-String -Path $h.FullName -Pattern 'C02002' | ForEach-Object { Write-Host $_.Line.Trim() }
+          } else {
+            Write-Host 'wdfstatus.h not found'
+          }
+
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
